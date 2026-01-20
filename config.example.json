@@ -1,0 +1,21 @@
+{
+  "openai_api_key": "${OPENAI_API_KEY}",
+  "openai_model": "gpt-4o-mini",
+  "sources": [
+    {
+      "type": "json",
+      "platform": "google_play",
+      "path": "data/google_play.json"
+    },
+    {
+      "type": "url",
+      "platform": "facebook",
+      "url": "https://example.com/mentions"
+    }
+  ],
+  "output": {
+    "db_path": "data/mentions.db",
+    "json_report": "output/report.json",
+    "html_report": "output/report.html"
+  }
+}
