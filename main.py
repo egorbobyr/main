@@ -2,13 +2,32 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from ai_client import AIClient
 from collectors import load_comments_from_json, load_comments_from_url
 from models import Comment
 from report import build_report, render_html
 from storage import init_db, save_comments
+
+DEFAULT_CONFIG_CANDIDATES = [Path("config.json")]
+DEFAULT_DATA_PATH = Path("data/sample_comments.json")
+DEFAULT_OUTPUT_DIR = Path("output")
+
+DEFAULT_CONFIG = {
+    "sources": [
+        {
+            "type": "json",
+            "platform": "demo",
+            "path": str(DEFAULT_DATA_PATH),
+        }
+    ],
+    "output": {
+        "db_path": str(Path("data/mentions.db")),
+        "json_report": str(DEFAULT_OUTPUT_DIR / "report.json"),
+        "html_report": str(DEFAULT_OUTPUT_DIR / "report.html"),
+    },
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -21,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--config",
-        required=True,
+        default=None,
         help="Шлях до JSON-конфігу з джерелами та шляхами виходу.",
     )
     parser.add_argument(
@@ -49,6 +68,52 @@ def load_config(path: Path) -> dict[str, Any]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Некоректний JSON у файлі {path}: {exc}") from exc
     return payload
+
+
+def resolve_config_path(raw_path: str | None) -> Optional[Path]:
+    if raw_path:
+        path = Path(raw_path).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"Конфіг не знайдено: {path}")
+        return path
+
+    for candidate in DEFAULT_CONFIG_CANDIDATES:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def ensure_default_files() -> dict[str, Any]:
+    DEFAULT_DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not DEFAULT_DATA_PATH.exists():
+        DEFAULT_DATA_PATH.write_text(
+            json.dumps(
+                [
+                    {
+                        "text": "Супер сервіс моно-бізнес, дякую!",
+                        "author": "Demo User",
+                        "created_at": "2024-01-10",
+                    },
+                    {
+                        "text": "Моно бізнес не працює, жахливо",
+                        "author": "Demo User 2",
+                        "created_at": "2024-01-11",
+                    },
+                    {
+                        "text": "Просто інший текст без згадок",
+                        "author": "Demo User 3",
+                    },
+                ],
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+    return DEFAULT_CONFIG
 
 
 def collect_sources(config: dict[str, Any], ai_client: AIClient) -> list[Comment]:
@@ -81,8 +146,11 @@ def apply_sentiment(comments: list[Comment], ai_client: AIClient) -> list[Commen
 
 def main() -> None:
     args = parse_args()
-    config_path = Path(args.config).expanduser()
-    config = load_config(config_path)
+    config_path = resolve_config_path(args.config)
+    if config_path is None:
+        config = ensure_default_files()
+    else:
+        config = load_config(config_path)
 
     ai_client = AIClient(
         api_key=config.get("openai_api_key"),
